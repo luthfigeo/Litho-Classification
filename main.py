@@ -3,8 +3,8 @@ import sys
 import scipy
 import numpy as np
 import matplotlib
-import sklearn
 import pandas as pd
+import seaborn as sns
 from os import listdir
 from pandas.plotting import scatter_matrix
 import matplotlib.pyplot as plt
@@ -56,19 +56,21 @@ db.to_csv('Dataset.csv', sep=',')
 def DatasetSummary(dataset):
         print(dataset.shape)
         print(dataset.describe())
-#DatasetSummary(db)
+DatasetSummary(db)
 
 # DataVisualization
 def DatasetGraph(dataset):
-        ax = scatter_matrix(dataset,figsize=(20,20), diagonal='kde')
-        ax[3,0].set_xlim(0,300)
-        ax[3,1].set_xlim(0,1)
-        ax[3,2].set_xlim(1.7,2.7)
-        ax[3,3].set_xlim(0.1,1000)
-        ax[3,3].set_xscale('log')
-        plt.savefig('data.jpg',dpi=100)
-        plt.show()
-#DatasetGraph(db.loc[db['LITHOLOGY']=='Basalt'])
+    sns.set()
+    sns.pairplot(dataset,hue='LITHOLOGY',palette=sns.diverging_palette(220, 20, n=7))
+    '''ax = scatter_matrix(dataset,figsize=(20,20), diagonal='kde')
+    ax[3,0].set_xlim(0,300)
+    ax[3,1].set_xlim(0,1)
+    ax[3,2].set_xlim(1.7,2.7)
+    ax[3,3].set_xlim(0.1,1000)
+    ax[3,3].set_xscale('log')
+    plt.savefig('data.jpg',dpi=100)
+    plt.show()'''
+#DatasetGraph(db)
 
 # DataPreprocessing
 db = db.dropna()
@@ -80,7 +82,7 @@ db = db.replace(('Tuffaceous Sandstone','Coal','Limestone','Calcareous Shale','M
 db = db.replace(('Andesite','Basalt','Slate'),'Igneous')
 
 X = db.iloc[:,0:4].values
-Y = db.iloc[:,4].values
+Y = db.iloc[:,-1].values
 Y = Y.reshape((len(Y),1))
 
 ct = ColumnTransformer([('one_hot_encoder', OneHotEncoder(), [0])],remainder='passthrough')
@@ -104,25 +106,25 @@ def ModelKnn(xtrain,xtest,ytrain):
         classifier = KNeighborsClassifier(n_neighbors=10)
         classifier.fit(xtrain, ytrain)
         ypredict = classifier.predict(xtest)
-        return ypredict
+        return ypredict, classifier
 
 def ModelSvm(xtrain,xtest,ytrain):
         classifier = SVC(kernel='rbf', random_state=seed)
         classifier.fit(xtrain, ytrain)
         ypredict = classifier.predict(xtest)
-        return ypredict
+        return ypredict, classifier
 
 def ModelRF(xtrain,xtest,ytrain):
         classifier = RandomForestClassifier(n_estimators=100, random_state=seed)
         classifier.fit(xtrain, ytrain)
         ypredict = classifier.predict(xtest)
-        return ypredict
+        return ypredict, classifier
 
 def ModelNBayes(xtrain,xtest,ytrain):
         classifier = GaussianNB()
         classifier.fit(xtrain, ytrain)
         ypredict = classifier.predict(xtest)
-        return ypredict
+        return ypredict, classifier
     
 def ModelAnn(xtrain, xtest, ytrain):
         classifier = Sequential()
@@ -131,24 +133,33 @@ def ModelAnn(xtrain, xtest, ytrain):
         classifier.compile(optimizer='adam',loss='categorical_crossentropy', metrics=['accuracy'])
         classifier.fit(xtrain, ytrain, batch_size=10, nb_epoch=30)
         ypredict = classifier.predict(xtest)
-        return ypredict
+        return ypredict, classifier
 
-Y_predict = ModelAnn(X_train,X_test,Y_train)
-
-if Y_predict.any() > 0.5:
-    Y_predict = 1
-else:
-    Y_predict = 0
+Y_predict, classifier = ModelRF(X_train,X_test,Y_train)
 
 #Calculating Accuracy
-cm = confusion_matrix(Y_test, Y_predict)
-cv = model_selection.cross_val_score(estimator=classifier, X=X_train, Y=Y_train, cv=10)
+cmARF = confusion_matrix(Y_test, Y_predict)
+cvRF = model_selection.cross_val_score(estimator=classifier, X=X_train, y=Y_train, cv=10)    
+accRF = accuracy_score(Y_test, Y_predict)
 
-def getAccuracy(testSet, predictions):
-	correct = 0
-	for x in range(len(testSet)):
-		if testSet[x] is predictions[x]:
-			correct += 1
-	return (correct/float(len(testSet))) * 100.0
+#Out
+test_predict = pd.DataFrame(Y_test, Y_predict)
+test_predict.to_csv('Test_Predict17.csv', sep=',')
+
+#BlindPrediction
+def BlindPrediction(file,classifier):
+    db = pd.read_csv("./blindtest_test/"+file, sep='\t')
+    db['DEEPRES'] = pd.to_numeric(db[dres_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    db['NEUTPHI'] = pd.to_numeric(db[nphi_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    db['DENS'] = pd.to_numeric(db[rhob_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    db['DEEPRES_COR'] = pd.to_numeric(db[dres_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    db['DENS_COR'] = pd.to_numeric(db[rhob_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    db['NEUTPHI_COR'] = db['NPHI_COR']
     
-acc = getAccuracy(Y_test, Y_predict)
+    db = db[['WELL','DEPTH','GR','NEUTPHI','DENS','DEEPRES','LITHOLOGY']]
+    db = db.dropna()
+    
+    db['DENS'] = db['DENS'].apply(lambda x: (x / 1000) if x > 100 else x)
+    db['NEUTPHI'] = db['NEUTPHI'].apply(lambda x: (x / 100) if x > 1 else x)
+    X = db.iloc[:,2:6].values
+    Y_predict = classifier.predict(X)
