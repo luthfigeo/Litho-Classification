@@ -42,17 +42,17 @@ def DatasetLoading(folder):
         print(file)
         df.append(pd.read_csv("./"+folder+"/"+file, sep='\t'))
     db = pd.concat(df, ignore_index=True, sort=True)
-    dres_cols = ['HDRS', 'ILD', 'LLD', 'RLA5']
-    nphi_cols = ['NPHI', 'TNPH']
-    rhob_cols = ['RHOB', 'RHOZ']
-    rhob_cor_cols = ['RHOB_COR', 'RHO_COR']
-    dres_cor_cols = ['ILD_COR', 'LLD_COR']
+    dres_cols = ['ILD','LLD']#['HDRS', 'ILD', 'LLD', 'RLA5']
+    nphi_cols = ['NPHI']#['NPHI', 'TNPH']
+    rhob_cols = ['RHOB']#['RHOB', 'RHOZ']
+    #rhob_cor_cols = ['RHOB_COR', 'RHO_COR']
+    #dres_cor_cols = ['ILD_COR', 'LLD_COR']
     db['DEEPRES'] = pd.to_numeric(db[dres_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
     db['NEUTPHI'] = pd.to_numeric(db[nphi_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
     db['DENS'] = pd.to_numeric(db[rhob_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
-    db['DEEPRES_COR'] = pd.to_numeric(db[dres_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
-    db['DENS_COR'] = pd.to_numeric(db[rhob_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
-    db['NEUTPHI_COR'] = db['NPHI_COR']
+    #db['DEEPRES_COR'] = pd.to_numeric(db[dres_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    #db['DENS_COR'] = pd.to_numeric(db[rhob_cor_cols].bfill(axis=1).iloc[:, 0], errors='coerce')
+    #db['NEUTPHI_COR'] = db['NPHI_COR']
     
     db['DENS'] = db['DENS'].apply(lambda x: (x / 1000) if x > 100 else x)
     db['NEUTPHI'] = db['NEUTPHI'].apply(lambda x: (x / 100) if x > 1 else x)
@@ -95,7 +95,7 @@ db = db.replace(('Tuff','Lithic Tuff','Vitric Tuff','Lapili Tuff','Welded Tuff',
 db = db.replace(('Tuffaceous Sandstone','Coal','Limestone','Calcareous Shale','Mudstone','Shale','Shale sand'),'Sedimentary')
 db = db.replace(('Andesite','Basalt'),'Igneous')
 
-X = db.iloc[:,0:3].values
+X = db.iloc[:,0:4].values
 Y = db.iloc[:,-1].values
 Y = Y.reshape((len(Y),1))
 
@@ -107,6 +107,10 @@ scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
+lda = LDA(n_components=2)
+X_train = lda.fit_transform(X_train,Y_train)
+X_test = lda.transform(X_test)
+
 encoder = LabelEncoder()
 Y_train = encoder.fit_transform(Y_train)
 Y_test = encoder.transform(Y_test)
@@ -115,12 +119,7 @@ Y_test = Y_test.reshape((len(Y_test),1))
 Y_train_cat = np_utils.to_categorical(Y_train)
 ct = ColumnTransformer([('one_hot_encoder', OneHotEncoder(), [0])],remainder='passthrough')
 Y_train = ct.fit_transform(Y_train)
-
-lda = LDA(n_components=2)
-X_train = lda.fit_transform(X_train,Y_train)
-X_test = lda.transform(X_test)
-
-        
+ 
 # Build models
 def ModelKnn():
         classifier = KNeighborsClassifier(n_neighbors=10)
@@ -141,20 +140,20 @@ def ModelNBayes():
 def ModelAnn():
         classifier = Sequential()
         classifier.add(Dense(activation = 'relu', input_dim=2, kernel_initializer='uniform', units=10))
-        classifier.add(Dense(activation = 'softmax', kernel_initializer='uniform', units=17))
+        classifier.add(Dense(activation = 'softmax', kernel_initializer='uniform', units=4))
         classifier.compile(optimizer='adam',loss='categorical_crossentropy', metrics=['accuracy'])
         return classifier
 
-classifier = ModelAnn()
+classifier = ModelRF()
 classifier.fit(X_train, Y_train)
 Y_predict = classifier.predict(X_test)
 
 #Y_predict = Y_predict.apply(lambda x: x.idxmax(), axis = 1)
 
 #Calculating Accuracy
-cmSvmi_ = confusion_matrix(Y_test, Y_predict)
-cvSvmi_ = model_selection.cross_val_score(estimator=classifier, X=X_train, y=Y_train, cv=10)    
-accSvmi_ = accuracy_score(Y_test, Y_predict)
+cmRF2 = confusion_matrix(Y_test, Y_predict)
+cvRF2 = model_selection.cross_val_score(estimator=classifier, X=X_train, y=Y_train, cv=10)    
+accRF2 = accuracy_score(Y_test, Y_predict)
 
 estimator = KerasClassifier(build_fn=ModelAnn, epochs=30, batch_size=5, verbose=0)
 kfold = KFold(n_splits=10, shuffle=True)
@@ -193,6 +192,7 @@ def BlindPrediction(file,classifier):
     
     return db_blind, Y_blind
 
-data, prediction = BlindPrediction(file="blindtest/blindtest_text",classifier)
-result = pd.DataFrame(data, prediction)
-result.to_csv('Result.csv', sep=',')
+data, prediction = BlindPrediction(file="blindtest/blindtest_text",classifier=classifier)
+prediction = encoder.fit_transform(prediction)
+data['LITHOLOGY'] = prediction
+data.to_csv('Result_RF_4_encoded.csv', sep=',')
