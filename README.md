@@ -1,5 +1,5 @@
 # Volcanic facies Classification using Random Forest
-### Luthfi
+#### by Luthfi
 
 Handle classification within volcanic formation using Random Forest. Another method is also included to be compared. In this case I'm dealing with Tuff, Igneous Rock (Andesite, Basalt), and Sedimentary sequences (Tuffaceous Sandstone, Shale), and Conglomerates.
 
