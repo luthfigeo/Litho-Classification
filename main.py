@@ -7,7 +7,7 @@ from os import listdir
 
 from sklearn import model_selection
 from sklearn.metrics import confusion_matrix, accuracy_score, roc_curve, auc
-from sklearn.preprocessing import LabelEncoder, StandardScaler, label_binarize
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler, label_binarize
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -55,7 +55,8 @@ def DatasetLoading(folder):
     return db
 
 dbase = DatasetLoading(folder="Dataset_text")
-db = dbase[['GAMMARAY','DENS','NEUTPHI','DEEPRES','LITHOLOGY']]#,'GR_COR','NEUTPHI_COR','DENS_COR','DEEPRES_COR']]
+dbase1=dbase
+db = dbase[['GAMMARAY','NEUTPHI','DENS','DEEPRES','LITHOLOGY']]#,'GR_COR','NEUTPHI_COR','DENS_COR','DEEPRES_COR']]
 db.to_csv('Dataset24102019.csv', sep=',')
 db = db[['GR_COR','NPHI_COR','RHOB_COR','ILD_COR','LITHOLOGY']]#,'GR_COR','NEUTPHI_COR','DENS_COR','DEEPRES_COR']]
 
@@ -71,17 +72,17 @@ def DatasetGraph(dataset,category):
     g = sns.pairplot(dataset,hue=category)
     g.axes[0,0].set_ylim((0,300))
     g.axes[3,0].set_xlim((0,300))
-    g.axes[1,0].set_ylim((0,1))
-    g.axes[3,1].set_ylim((0,1))
-    g.axes[3,2].set_xlim((1.7,2.7))
-    g.axes[2,0].set_ylim((1.7,2.7))
+    g.axes[3,2].set_ylim((0,1))
+    g.axes[2,0].set_ylim((0,1))
+    g.axes[3,1].set_xlim((1.7,2.7))
+    g.axes[1,0].set_ylim((1.7,2.7))
     g.axes[3,3].set_xlim((0.1,1000))
     g.axes[3,0].set_ylim((0.1,1000))
     g.axes[3,0].set(yscale='log')
     g.axes[3,3].set(xscale='log')
     g.fig.suptitle("Lithology Data Distribution")
     g.savefig('data12.jpg',dpi=100)
-DatasetGraph(dataX,category='LITHOLOGY')
+DatasetGraph(db,category='LITHOLOGY')
 dataX = pd.DataFrame(X_train)
 dataX['LITHOLOGY']=Y_train
 
@@ -104,14 +105,14 @@ db = db[db.LITHOLOGY != 'Coal']
 db = db[db.LITHOLOGY != 'Conglomerate']
 db = db[db.LITHOLOGY != 'Welded Tuff']
 db = db[db.LITHOLOGY != 'Shale']
+db = db[db.LITHOLOGY != 'Limestone']
+db = db[db.LITHOLOGY != 'Sandstone']
+db = db[db.LITHOLOGY != 'Tuff']
 
 #4 lithology
 db = db.replace(('Tuff','Lithic Tuff','Vitric Tuff','Lapili Tuff','Welded Tuff','Welded Lapili Tuff'),'Tuff')
 db = db.replace(('Tuffaceous Sandstone','Coal','Limestone','Calcareous Shale','Mudstone','Shale','Shale sand'),'Sedimentary')
 db = db.replace(('Andesite','Basalt'),'Igneous')
-
-db = db[db.LITHOLOGY != 'Conglomerate']
-db = db[db.LITHOLOGY != 'Sandstone']
 db = db.replace(('Mudstone','Shale'),'Shale')
 db = db.replace(('Tuffaceous Sandstone','Sandstone'),'Sandstone')
 db = db.replace(('Welded Tuff','Welded Lapili Tuff'),'Welded Tuff')
@@ -122,11 +123,13 @@ Y = db.iloc[:,-1].values
 Y = Y.reshape((len(Y),1))
 
 encoder = LabelEncoder()
-Y = encoder.fit_transform(Y)
+Y_train = encoder.fit_transform(Y_train)
+Y_pred = encoder.transform(Y_pred)
+Y_tes = encoder.transform(Y_test)
 
-Y = label_binarize(Y, classes=[0, 1, 2, 3])
-litho_label = ['Igneous','Lithic Tuff','Tuff','Vitric Tuff']#['Andesite','Basalt','Conglomerate','Lapili Tuff','Lithic Tuff',
-               #'Sandstone','Shale','Tuff','Vitric Tuff','Welded Tuff']
+Y = label_binarize(Y, classes=[0, 1])#, 2, 3, 4, 5, 6, 7])
+litho_label = ['Conglomerate','Igneous','Lithic Tuff',
+               'Sandstone','Shale','Tuff','Vitric Tuff','Welded Tuff']
 n_classes = Y.shape[1]
 
 test = 0.20
@@ -153,11 +156,11 @@ def ModelSvm():
         return classifier
 
 def ModelRF():
-        classifier = RandomForestClassifier(n_estimators=200, random_state=seed, n_jobs=-1)
+        classifier = RandomForestClassifier(n_estimators=100, random_state=seed, n_jobs=-1, verbose=1)
         return classifier
     
 def ModelBRF():
-        classifier = BalancedRandomForestClassifier(n_estimators=200, random_state=seed)
+        classifier = BalancedRandomForestClassifier(n_estimators=250, random_state=seed, verbose=1)
         return classifier
 
 def ModelNBayes():
@@ -173,16 +176,17 @@ def ModelAnn():
         momentum = 0.75
         sgd= SGD(lr=lr, momentum=momentum, decay=decay,nesterov=False)
         adm = adam(lr=lr,decay=decay)
-        classifier.compile(optimizer=adm,loss='categorical_crossentropy', metrics=['accuracy'])
+        classifier.compile(optimizer='adam',loss='categorical_crossentropy', metrics=['accuracy','mse'])
         return classifier
 
-#classifier = KerasClassifier(build_fn=ModelAnn, epochs=300, batch_size=5, verbose=1)
+#classifier = KerasClassifier(build_fn=ModelAnn, epochs=1000, batch_size=5, verbose=1)
 classifier = ModelRF()
 classifier.fit(X_train, Y_train)
 Y_predict = classifier.predict(X_test)
-Y_pred = Y_predict.argmax(1)
+Y_pred = Y_predict
 Y_tes = Y_test.argmax(1)
-Y_predict = label_binarize(Y_predict, classes=[0, 1, 2, 3])
+Y_predict = label_binarize(Y_predict, classes=[0, 1,2])#, 2, 3, 4, 5, 6, 7])
+Y_test = label_binarize(Y_test, classes=[0, 1,2])
 
 #Calculating Accuracy
 cm = confusion_matrix(Y_tes, Y_pred)
@@ -222,11 +226,11 @@ fpr_auc = dict()
 tpr_auc = dict()
 roc_auc = dict()
 AUC = []
-for i in range(n_classes):
+for i in range(3):
     fpr_auc[i], tpr_auc[i], treshold = roc_curve(Y_test[:,i], Y_predict[:,i])
     roc_auc[i] = auc(fpr_auc[i], tpr_auc[i])
     
-for i in range(n_classes):
+for i in range(3):
     plt.figure()
     plt.plot(fpr_auc[i], tpr_auc[i], label='ROC curve (area = %0.2f)' % roc_auc[i])
     plt.plot([0, 1], [0, 1], 'k--')
@@ -234,12 +238,12 @@ for i in range(n_classes):
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('Receiver operating characteristic %s' %litho_label[i])
+    #plt.title('Receiver operating characteristic %s' %litho_label[i])
     plt.legend(loc="lower right")
     plt.show()
 
-performance = pd.DataFrame([TPR,TNR,PPV,NPV,FPR,FNR,FDR,ACC,F1,list(roc_auc.values())])
-performance.index = (['TPR','TNR','PPV','NPV','FPR','FNR','FDR','ACC','F1','ROC AUC'])
+performance = pd.DataFrame([TPR,TNR,PPV,NPV,FPR,FNR,FDR,ACC,F1])#,list(roc_auc.values())])
+performance.index = (['TPR','TNR','PPV','NPV','FPR','FNR','FDR','ACC','F1'])#,'ROC AUC'])
 
 # =============================================================================
 # #Parameter Picking
@@ -254,16 +258,27 @@ performance.index = (['TPR','TNR','PPV','NPV','FPR','FNR','FDR','ACC','F1','ROC 
 #BlindPrediction
 def BlindPrediction(file,classifier):
     db_blind = DatasetLoading(folder=file)
-    db_blind = db_blind[['WELL','DEPTH','GAMMARAY','DENS','NEUTPHI']]
+    db_blind = db_blind[['WELL','DEPTH','GAMMARAY','DENS','NEUTPHI','DEEPRES']]
     db_blind = db_blind.dropna()
-    X_blind = db_blind.iloc[:,2:4].values
+    X_blind = db_blind.iloc[:,2:6].values
     X_blind = scaler.transform(X_blind)
     Y_blind = classifier.predict(X_blind)
     return db_blind, Y_blind
 
 data, prediction = BlindPrediction(file="blindtest/blindtest_text",classifier=classifier)
-prediction = prediction.argmax(1)
+#prediction = prediction.argmax(1)
 data['LITHOLOGY2'] = prediction
 prediction = encoder.inverse_transform(prediction)
 data['LITHOLOGY'] = prediction
-data.to_csv('Result_RF_GR_NPHI_RHOB_10_2410.csv', sep=',')
+data.to_csv('Result_3class_311_100_.csv', sep=',')
+
+prediction = encoder.transform(prediction)
+# =============================================================================
+# 
+# X_blind = dbTuff.iloc[:,0:4].values
+# X_blind = scaler.transform(X_blind)
+# Y_blind = classifier.predict(X_blind)
+# dbTuff['PREDICTEDTUFF']=Y_blind
+# 
+# dbTuff.to_csv('detailTuff.txt', sep=',')
+# =============================================================================
